@@ -1,4 +1,3 @@
-// Replace those with your Blynk account Tokens
 #define BLYNK_TEMPLATE_ID "TMPL4vC03FgXG"
 #define BLYNK_TEMPLATE_NAME "IndustrialProject"
 #define BLYNK_AUTH_TOKEN "I_MHZ2hUc8477q_VxdLw7oxEm8obORIE"
@@ -6,7 +5,8 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
-#include <Adafruit_SHT31.h>
+//#include <Adafruit_SHT31.h>
+#include <DHT.h>
 #include <ESP32Servo.h>
 
 // ====== WiFi and Blynk credentials ======
@@ -15,16 +15,12 @@ char ssid[] = "Wokwi-GUEST";  // For Wokwi simulation
 char pass[] = "";
 
 // ====== Hardware ======
-#define LDR_PIN 32
-#define SERVO_PIN 25
+#define LDR_PIN 36
+#define SERVO_PIN 2
 #define DHT_PIN 21
-#define PUMP_PIN 26
-#define MOISTURE_SENSOR 34
 
-int moistureValue = 0;
-String pumpStatus = "OFF";
-
-Adafruit_SHT31 sht31 = Adafruit_SHT31();
+DHT dht22(DHT_PIN, DHT22);
+//Adafruit_SHT31 sht31 = Adafruit_SHT31();
 Servo servo;
 
 // ====== Virtual Pins in Blynk app ======
@@ -46,27 +42,6 @@ BLYNK_WRITE(VPIN_SERVO) {
   }
 }
 
-void moisture() {
-  // Read and map moisture level
-  moistureValue = analogRead(MOISTURE_SENSOR);
-  moistureValue = map(moistureValue, 0, 1023, 0, 100);
-
-  // Send moisture to Blynk (Virtual Pin V0)
-  Blynk.virtualWrite(V4, moistureValue);
-
-  // Control Pump Automatically
-  // Change 255 to the real threshold value after simulating in Lab
-  if (moistureValue < 255) {
-    digitalWrite(PUMP_PIN, HIGH); // Activate pump
-    pumpStatus = "ON";
-  }
-  else {
-    digitalWrite(PUMP_PIN, LOW); // Deactivate pump
-    pumpStatus = "OFF";
-  }
-}
-
-
 void LDR_send()
 {
   int ldrValue = analogRead(LDR_PIN);
@@ -77,8 +52,10 @@ void LDR_send()
 
 void SHT31_send()
 {
-  float hum = sht31.readHumidity();
-  float temp = sht31.readTemperature();
+  float hum = dht22.readHumidity();
+  float temp = dht22.readTemperature();
+  //float hum = sht31.readHumidity();
+  //float temp = sht31.readTemperature();
 
   if (isnan(hum) || isnan(temp)) {
     Serial.println(F("Failed to read from SHT31 sensor!"));
@@ -100,13 +77,9 @@ void setup()
 {
   Serial.begin(115200);
   
-  sht31.begin(0x44);
-
+  dht22.begin();
+  //sht31.begin(0x44);
   servo.attach(SERVO_PIN);
-
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, HIGH); // Pump OFF initially
 
   Blynk.begin(auth, ssid, pass);
 }
@@ -115,8 +88,6 @@ void loop()
 {
   Blynk.run();
   
-  moisture();
-  delay(500);
   LDR_send();
   delay(500);
   SHT31_send();

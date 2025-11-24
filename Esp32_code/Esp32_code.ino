@@ -17,14 +17,15 @@ char pass[] = "2ZL48Y8226";   // Replace with your WiFi password
 // ====== Hardware ======
 #define LDR_PIN 32
 #define SERVO_PIN 25
-#define DHT_PIN 21
 #define PUMP_PIN 26
 #define MOISTURE_SENSOR 34
 
 int moistureValue = 0;
 String pumpStatus = "OFF";
 
+// Connect SHT to pins 21 (SDA) and 22 (SCL) No need to define pins in the code for this sensor only
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
+
 Servo servo;
 
 // ====== Virtual Pins in Blynk app ======
