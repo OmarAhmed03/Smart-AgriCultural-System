@@ -1,3 +1,4 @@
+// Replace those with your Blynk account Tokens
 #define BLYNK_TEMPLATE_ID "TMPL4vC03FgXG"
 #define BLYNK_TEMPLATE_NAME "IndustrialProject"
 #define BLYNK_AUTH_TOKEN "I_MHZ2hUc8477q_VxdLw7oxEm8obORIE"
