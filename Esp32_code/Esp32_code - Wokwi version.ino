@@ -2,7 +2,6 @@
 #define BLYNK_TEMPLATE_ID "TMPL4vC03FgXG"
 #define BLYNK_TEMPLATE_NAME "IndustrialProject"
 #define BLYNK_AUTH_TOKEN "I_MHZ2hUc8477q_VxdLw7oxEm8obORIE"
-
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <BlynkSimpleEsp32.h>
@@ -19,6 +18,7 @@ char pass[] = "";
 #define LDR_PIN 36
 #define SERVO_PIN 2
 #define DHT_PIN 21
+#define RELAY_PIN 4  // Pin connected to relay for water pump
 
 DHT dht22(DHT_PIN, DHT22);
 //Adafruit_SHT31 sht31 = Adafruit_SHT31();
@@ -29,17 +29,28 @@ Servo servo;
 #define VPIN_HUM   V1
 #define VPIN_TEMP  V2
 #define VPIN_SERVO V3
+#define VPIN_PUMP  V4  // Virtual pin for water pump control
 
 BLYNK_WRITE(VPIN_SERVO) {
   int value = param.asInt();
   // value is one or zero, as it is a digital ouput from blynk
   servo.write(value * 180);
-
   if (value) {
     Serial.println("Window is closed");
   }
   else {
     Serial.println("Window is open");
+  }
+}
+
+BLYNK_WRITE(VPIN_PUMP) {
+  int value = param.asInt();
+  digitalWrite(RELAY_PIN, value);
+  if (value) {
+    Serial.println("Water pump is ON");
+  }
+  else {
+    Serial.println("Water pump is OFF");
   }
 }
 
@@ -57,7 +68,6 @@ void SHT31_send()
   float temp = dht22.readTemperature();
   //float hum = sht31.readHumidity();
   //float temp = sht31.readTemperature();
-
   if (isnan(hum) || isnan(temp)) {
     Serial.println(F("Failed to read from SHT31 sensor!"));
     return;
@@ -78,10 +88,13 @@ void setup()
 {
   Serial.begin(115200);
   
+  // Initialize relay pin for water pump
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Ensure pump is OFF at startup
+  
   dht22.begin();
   //sht31.begin(0x44);
   servo.attach(SERVO_PIN);
-
   Blynk.begin(auth, ssid, pass);
 }
 

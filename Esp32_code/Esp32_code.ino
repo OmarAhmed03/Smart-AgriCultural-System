@@ -17,7 +17,7 @@ char pass[] = "2ZL48Y8226";   // Replace with your WiFi password
 // ====== Hardware ======
 #define LDR_PIN 32
 #define SERVO_PIN 25
-#define PUMP_PIN 26
+#define RELAY_PIN 26  // Relay for water pump (9-12V)
 #define MOISTURE_SENSOR 34
 
 int moistureValue = 0;
@@ -33,6 +33,10 @@ Servo servo;
 #define VPIN_HUM   V1
 #define VPIN_TEMP  V2
 #define VPIN_SERVO V3
+#define VPIN_MOISTURE V4
+#define VPIN_PUMP_MANUAL V5  // Manual pump control from Blynk
+
+bool manualPumpControl = false;  // Flag for manual vs automatic control
 
 BLYNK_WRITE(VPIN_SERVO) {
   int value = param.asInt();
@@ -47,26 +51,51 @@ BLYNK_WRITE(VPIN_SERVO) {
   }
 }
 
-void moisture() {
-  // Read and map moisture level
-  moistureValue = analogRead(MOISTURE_SENSOR);
-  moistureValue = map(moistureValue, 0, 1023, 0, 100);
-
-  // Send moisture to Blynk (Virtual Pin V0)
-  Blynk.virtualWrite(V4, moistureValue);
-
-  // Control Pump Automatically
-  // Change 255 to the real threshold value after simulating in Lab
-  if (moistureValue < 255) {
-    digitalWrite(PUMP_PIN, HIGH); // Activate pump
-    pumpStatus = "ON";
+BLYNK_WRITE(VPIN_PUMP_MANUAL) {
+  int value = param.asInt();
+  manualPumpControl = (value == 1);
+  
+  if (manualPumpControl) {
+    digitalWrite(RELAY_PIN, HIGH);  // Turn pump ON
+    pumpStatus = "ON (Manual)";
+    Serial.println("Water pump ON (Manual Control)");
   }
   else {
-    digitalWrite(PUMP_PIN, LOW); // Deactivate pump
-    pumpStatus = "OFF";
+    digitalWrite(RELAY_PIN, LOW);  // Turn pump OFF
+    pumpStatus = "OFF (Manual)";
+    Serial.println("Water pump OFF (Manual Control)");
   }
 }
 
+void moisture() {
+  // Read and map moisture level
+  moistureValue = analogRead(MOISTURE_SENSOR);
+  moistureValue = map(moistureValue, 0, 4095, 0, 100);  // ESP32 ADC is 12-bit (0-4095)
+
+  // Send moisture to Blynk
+  Blynk.virtualWrite(VPIN_MOISTURE, moistureValue);
+
+  // Only control pump automatically if manual control is not active
+  if (!manualPumpControl) {
+    // Control Pump Automatically based on moisture
+    // Change 30 to the real threshold value after testing in Lab
+    if (moistureValue < 30) {  // Soil is dry
+      digitalWrite(RELAY_PIN, HIGH);  // Activate relay (pump ON)
+      pumpStatus = "ON (Auto)";
+      Serial.println("Water pump ON (Automatic - Low Moisture)");
+    }
+    else {
+      digitalWrite(RELAY_PIN, LOW);  // Deactivate relay (pump OFF)
+      pumpStatus = "OFF (Auto)";
+      Serial.println("Water pump OFF (Automatic - Moisture OK)");
+    }
+  }
+  
+  Serial.print("Moisture: ");
+  Serial.print(moistureValue);
+  Serial.print("% - Pump Status: ");
+  Serial.println(pumpStatus);
+}
 
 void LDR_send()
 {
@@ -91,7 +120,7 @@ void SHT31_send()
     Serial.print(" % ");
     Serial.print(F("Temperature: "));
     Serial.print(temp);
-    Serial.print(F(" °C "));
+    Serial.println(F(" °C"));
     Blynk.virtualWrite(VPIN_HUM, hum);
     Blynk.virtualWrite(VPIN_TEMP, temp);
   }
@@ -102,14 +131,16 @@ void setup()
   Serial.begin(115200);
   
   sht31.begin(0x44);
-
   servo.attach(SERVO_PIN);
 
-  pinMode(LED_PIN, OUTPUT);
+  // Initialize relay pin for water pump
   pinMode(PUMP_PIN, OUTPUT);
-  digitalWrite(PUMP_PIN, HIGH); // Pump OFF initially
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);  // Pump OFF initially (relay not active)
 
   Blynk.begin(auth, ssid, pass);
+  
+  Serial.println("System initialized - Pump control ready");
 }
 
 void loop()
