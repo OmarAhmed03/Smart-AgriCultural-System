@@ -1,4 +1,3 @@
-// Replace those with your Blynk account Tokens
 #define BLYNK_TEMPLATE_ID "TMPL4vC03FgXG"
 #define BLYNK_TEMPLATE_NAME "IndustrialProject"
 #define BLYNK_AUTH_TOKEN "I_MHZ2hUc8477q_VxdLw7oxEm8obORIE"
@@ -8,25 +7,28 @@
 #include <BlynkSimpleEsp32.h>
 #include <Adafruit_SHT31.h>
 #include <ESP32Servo.h>
+#include "esp_task_wdt.h"
+#include "esp_system.h"
 
 // ====== WiFi and Blynk credentials ======
 char auth[] = BLYNK_AUTH_TOKEN;
-char ssid[] = "ZTE_80B3BE";   // Replace with your WiFi name
-char pass[] = "2ZL48Y8226";   // Replace with your WiFi password
+char ssid[] = "";     // Enter your WIFI name
+char pass[] = "";     // Enter your WIFI password
 
 // ====== Hardware ======
 #define LDR_PIN 32
 #define SERVO_PIN 25
-#define RELAY_PIN 26  // Relay for water pump (9-12V)
 #define MOISTURE_SENSOR 34
+#define RELAY_PIN 14
 
-int moistureValue = 0;
-String pumpStatus = "OFF";
-
-// Connect SHT to pins 21 (SDA) and 22 (SCL) No need to define pins in the code for this sensor only
+// SHT31 is connected to pins 21 (SDA) and 22 (SCL)
+// No need to define pins in the code for this sensor only
 Adafruit_SHT31 sht31 = Adafruit_SHT31();
-
 Servo servo;
+
+// ====== Flags ======
+bool manual_auto_switch = false; // Flag for manual (true) vs automatic (false) control
+bool manualPumpControl = false;  // Flag for manual on vs off
 
 // ====== Virtual Pins in Blynk app ======
 #define VPIN_LDR   V0
@@ -34,74 +36,55 @@ Servo servo;
 #define VPIN_TEMP  V2
 #define VPIN_SERVO V3
 #define VPIN_MOISTURE V4
-#define VPIN_PUMP_MANUAL V5  // Manual pump control from Blynk
+#define VPIN_PUMP_MANUAL_AUTO_SWITCH V5
+#define VPIN_PUMP_MANUAL_CONTROL V6
 
-bool manualPumpControl = false;  // Flag for manual vs automatic control
 
 BLYNK_WRITE(VPIN_SERVO) {
   int value = param.asInt();
   // value is one or zero, as it is a digital ouput from blynk
   servo.write(value * 180);
-
-  if (value) {
-    Serial.println("Window is closed");
-  }
-  else {
-    Serial.println("Window is open");
-  }
 }
 
-BLYNK_WRITE(VPIN_PUMP_MANUAL) {
+BLYNK_WRITE(VPIN_PUMP_MANUAL_AUTO_SWITCH) {
+  int value = param.asInt();
+  manual_auto_switch = (value == 1);
+}
+
+BLYNK_WRITE(VPIN_PUMP_MANUAL_CONTROL) {
   int value = param.asInt();
   manualPumpControl = (value == 1);
-  
-  if (manualPumpControl) {
-    digitalWrite(RELAY_PIN, HIGH);  // Turn pump ON
-    pumpStatus = "ON (Manual)";
-    Serial.println("Water pump ON (Manual Control)");
-  }
-  else {
-    digitalWrite(RELAY_PIN, LOW);  // Turn pump OFF
-    pumpStatus = "OFF (Manual)";
-    Serial.println("Water pump OFF (Manual Control)");
-  }
 }
 
 void moisture() {
-  // Read and map moisture level
-  moistureValue = analogRead(MOISTURE_SENSOR);
-  moistureValue = map(moistureValue, 0, 4095, 0, 100);  // ESP32 ADC is 12-bit (0-4095)
+  int moistureValue = analogRead(MOISTURE_SENSOR);
 
-  // Send moisture to Blynk
   Blynk.virtualWrite(VPIN_MOISTURE, moistureValue);
 
-  // Only control pump automatically if manual control is not active
-  if (!manualPumpControl) {
+  if (!manual_auto_switch) {
     // Control Pump Automatically based on moisture
-    // Change 30 to the real threshold value after testing in Lab
-    if (moistureValue < 30) {  // Soil is dry
+    if (moistureValue < 400) {  // Soil is dry
       digitalWrite(RELAY_PIN, HIGH);  // Activate relay (pump ON)
-      pumpStatus = "ON (Auto)";
-      Serial.println("Water pump ON (Automatic - Low Moisture)");
     }
     else {
       digitalWrite(RELAY_PIN, LOW);  // Deactivate relay (pump OFF)
-      pumpStatus = "OFF (Auto)";
-      Serial.println("Water pump OFF (Automatic - Moisture OK)");
     }
   }
-  
-  Serial.print("Moisture: ");
-  Serial.print(moistureValue);
-  Serial.print("% - Pump Status: ");
-  Serial.println(pumpStatus);
+  else {
+    // Control Pump Manual
+    if (manualPumpControl) {
+      digitalWrite(RELAY_PIN, HIGH);
+    }
+    else {
+      digitalWrite(RELAY_PIN, LOW);
+    }
+  }
 }
+
 
 void LDR_send()
 {
   int ldrValue = analogRead(LDR_PIN);
-  Serial.print("LDR = ");
-  Serial.println(ldrValue);
   Blynk.virtualWrite(VPIN_LDR, ldrValue);
 }
 
@@ -111,16 +94,10 @@ void SHT31_send()
   float temp = sht31.readTemperature();
 
   if (isnan(hum) || isnan(temp)) {
-    Serial.println(F("Failed to read from SHT31 sensor!"));
-    return;
+    Blynk.virtualWrite(VPIN_HUM, 0);
+    Blynk.virtualWrite(VPIN_TEMP, 0);
   }
   else {
-    Serial.print(F("Humidity: "));
-    Serial.print(hum);
-    Serial.print(" % ");
-    Serial.print(F("Temperature: "));
-    Serial.print(temp);
-    Serial.println(F(" °C"));
     Blynk.virtualWrite(VPIN_HUM, hum);
     Blynk.virtualWrite(VPIN_TEMP, temp);
   }
@@ -128,28 +105,49 @@ void SHT31_send()
 
 void setup()
 {
-  Serial.begin(115200);
-  
   sht31.begin(0x44);
   servo.attach(SERVO_PIN);
 
-  // Initialize relay pin for water pump
-  pinMode(PUMP_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, LOW);  // Pump OFF initially (relay not active)
+  digitalWrite(RELAY_PIN, LOW);
 
   Blynk.begin(auth, ssid, pass);
-  
-  Serial.println("System initialized - Pump control ready");
+
+  // ===== Watchdog configuration =====
+  int WDT_TIMEOUT = 10;
+  const esp_task_wdt_config_t wdt_config = {
+    .timeout_ms = WDT_TIMEOUT * 1000,
+    .idle_core_mask = (1<<0),
+    .trigger_panic = true
+  };
+  esp_task_wdt_init(&wdt_config);
+  esp_task_wdt_add(NULL);
+
+  // ===== Detect if last reset was caused by WDT =====
+  esp_reset_reason_t reason = esp_reset_reason();
+
+  if (reason == ESP_RST_TASK_WDT || reason == ESP_RST_INT_WDT  || reason == ESP_RST_WDT) {
+    // Send zeros to your virtual pins so we can see it on the app
+    Blynk.virtualWrite(VPIN_LDR,   0);
+    Blynk.virtualWrite(VPIN_HUM,   0);
+    Blynk.virtualWrite(VPIN_TEMP,  0);
+    Blynk.virtualWrite(VPIN_MOISTURE, 0);
+  }
 }
 
 void loop()
 {
+  // Start counting the timeout
+  esp_task_wdt_reset();
+
+  // To test hanging
+  while(true);
+
   Blynk.run();
   
-  moisture();
-  delay(500);
   LDR_send();
   delay(500);
   SHT31_send();
+  delay(500);
+  moisture();
 }
