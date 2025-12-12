@@ -17,6 +17,7 @@ char pass[] = "";     // Enter your WIFI password
 
 // ====== Hardware ======
 #define LDR_PIN 32
+#define IR_PIN 26
 #define SERVO_PIN 25
 #define MOISTURE_SENSOR 34
 #define RELAY_PIN 14
@@ -38,7 +39,7 @@ bool manualPumpControl = false;  // Flag for manual on vs off
 #define VPIN_MOISTURE V4
 #define VPIN_PUMP_MANUAL_AUTO_SWITCH V5
 #define VPIN_PUMP_MANUAL_CONTROL V6
-
+#define VPIN_IR   V7
 
 BLYNK_WRITE(VPIN_SERVO) {
   int value = param.asInt();
@@ -86,6 +87,13 @@ void LDR_send()
 {
   int ldrValue = analogRead(LDR_PIN);
   Blynk.virtualWrite(VPIN_LDR, ldrValue);
+}
+
+
+void IR_send()
+{
+  int IrValue = digitalRead(IR_PIN);
+  Blynk.virtualWrite(VPIN_IR, IrValue);
 }
 
 void SHT31_send()
@@ -141,11 +149,13 @@ void loop()
   esp_task_wdt_reset();
 
   // To test hanging
-  while(true);
+  //while(true);
 
   Blynk.run();
   
   LDR_send();
+  delay(500);
+  IR_send();
   delay(500);
   SHT31_send();
   delay(500);
